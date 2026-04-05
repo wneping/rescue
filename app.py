@@ -97,13 +97,16 @@ HTML_TEMPLATE = """
     var isAdmin = {{ 'true' if is_admin else 'false' }};
 
     // --- GPS 定位邏輯 ---
-    function locateUser() {
-        map.locate({
-            setView: true, 
-            maxZoom: 16,
-            enableHighAccuracy: true 
-        });
-    }
+    // 尋找 locateUser 函式並修改如下
+function locateUser() {
+    map.locate({
+        setView: true, 
+        maxZoom: 16,
+        enableHighAccuracy: true, // 強制使用 GPS
+        timeout: 10000,           // 給手機 10 秒時間定位
+        maximumAge: 0             // 不使用緩存的位置資訊
+    });
+}
 
     map.on('locationfound', function(e) {
         // 更新隱藏欄位
