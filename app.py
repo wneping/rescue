@@ -81,8 +81,44 @@ HTML_TEMPLATE = """
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    var map = L.map('map').setView([23.6, 121.0], 7);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    // 1. 初始化地圖 (預設位置可以先隨便設，例如台灣中心)
+var map = L.map('map').setView([23.6, 121.0], 7);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+// 2. 啟動 GPS 定位功能
+function locateUser() {
+    // 使用 Leaflet 內建的定位功能
+    map.locate({
+        setView: true,      // 定位後自動跳轉中心點
+        maxZoom: 16,        // 定位後的縮放等級（16 比較精準，看得到街道）
+        enableHighAccuracy: true // 強制使用高精準度 (GPS)
+    });
+}
+
+// 當定位成功時執行的動作
+map.on('locationfound', function(e) {
+    var radius = e.accuracy / 2;
+
+    // 在使用者位置畫一個藍點
+    L.marker(e.latlng).addTo(map)
+        .bindPopup("您目前在此範圍內 (誤差約 " + radius.toFixed(0) + " 公尺)").openPopup();
+
+    // 自動把「刊登表單」的經緯度填好，方便路人直接發布
+    document.getElementById('lat').value = e.latlng.lat;
+    document.getElementById('lng').value = e.latlng.lng;
+    
+    // 同時放一個臨時標記在那邊
+    if (tempMarker) map.removeLayer(tempMarker);
+    tempMarker = L.marker(e.latlng).addTo(map);
+});
+
+// 當定位失敗時（例如使用者拒絕權限）
+map.on('locationerror', function(e) {
+    alert("無法取得您的位置。請手動點擊地圖來選取地點。");
+});
+
+// 網頁一載入就執行定位
+locateUser();
 
     // 點擊選取座標
     var tempMarker;
