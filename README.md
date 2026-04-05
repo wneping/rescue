@@ -37,6 +37,8 @@ Cloudinary 整合：採用專業雲端圖片託管，確保在免費伺服器環
 
 部署平台: Render / GitHub
 
+
+
 🚀 快速開始 (Quick Start)
 1. 環境準備
 複製此專案並安裝必要套件：
@@ -46,21 +48,26 @@ git clone https://github.com/wneping/pet-mission.git
 cd pet-mission
 pip install -r requirements.txt
 
+
 2. 環境變數設定 (Environment Variables)
 請確保在系統中或部署平台設定以下變數：
 
-CLOUDINARY_NAME: 你的雲端空間名稱
+CLOUDINARY_NAME:
 
-CLOUDINARY_API_KEY: API 金鑰
+CLOUDINARY_API_KEY:
 
-CLOUDINARY_API_SECRET: API 密鑰
+CLOUDINARY_API_SECRET:
 
-FLASK_SECRET_KEY: Session 加密字串
+FLASK_SECRET_KEY:
+
+
 
 3. 本地執行
 Bash
 python app.py
 開啟瀏覽器前往 http://127.0.0.1:5000 即可開始使用。
+
+
 
 📖 使用指南
 發現毛小孩：開啟網頁並允許 GPS 定位。
@@ -72,6 +79,8 @@ python app.py
 發布：點擊「發布救援任務」，全國的使用者皆可在地圖上看見該資訊。
 
 後續追蹤：若有最新動向，可在該標記點下方留言回報。
+
+
 
 👤 管理員權限
 帳號: wxp800218
