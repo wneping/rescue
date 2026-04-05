@@ -93,40 +93,72 @@ HTML_TEMPLATE = """
     var map = L.map('map').setView([23.6, 121.0], 7);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    var tempMarker;
+    var tempMarker = null; // 初始化為 null 避免報錯
     var isAdmin = {{ 'true' if is_admin else 'false' }};
 
-    // --- GPS 定位邏輯 ---
-    // 尋找 locateUser 函式並修改如下
-function locateUser() {
-    map.locate({
-        setView: true, 
-        maxZoom: 16,
-        enableHighAccuracy: true, // 強制使用 GPS
-        timeout: 10000,           // 給手機 10 秒時間定位
-        maximumAge: 0             // 不使用緩存的位置資訊
-    });
-}
+    // --- 強化版 GPS 定位邏輯 ---
+    function locateUser() {
+        console.log("開始定位...");
+        // 增加一個簡單的提示，讓使用者知道正在嘗試定位
+        if (confirm("是否允許網頁存取您的精確位置以協助定位？")) {
+            map.locate({
+                setView: true, 
+                maxZoom: 16,
+                enableHighAccuracy: true, // 強制開啟手機 GPS
+                timeout: 15000,           // 給手機 15 秒時間搜尋衛星
+                maximumAge: 0             // 強制獲取最新資訊
+            });
+        }
+    }
 
+    // 定位成功時
     map.on('locationfound', function(e) {
-        // 更新隱藏欄位
+        console.log("定位成功:", e.latlng);
+        var radius = e.accuracy / 2;
+        
+        // 更新表單座標
         document.getElementById('lat').value = e.latlng.lat;
         document.getElementById('lng').value = e.latlng.lng;
         
-        // 放置刊登標記
-        if (tempMarker) map.removeLayer(tempMarker);
+        // 放置標記
+        if (tempMarker) {
+            map.removeLayer(tempMarker);
+        }
         tempMarker = L.marker(e.latlng).addTo(map).bindTooltip("您目前的精確位置").openTooltip();
         
-        // 畫出定位誤差圓圈
-        L.circle(e.latlng, e.accuracy / 2, {color: '#3498db', fillOpacity: 0.1}).addTo(map);
+        // 畫出誤差圓圈
+        L.circle(e.latlng, radius, {color: '#3498db', fillOpacity: 0.1}).addTo(map);
     });
 
+    // 定位失敗時 (這很重要，它會告訴你為什麼失敗)
     map.on('locationerror', function(e) {
-        console.log("定位失敗: " + e.message);
+        alert("定位失敗：" + e.message + "\\n\\n請確認：\\n1. 網址開頭為 https\\n2. 手機已開啟 GPS\\n3. 瀏覽器已允許位置權限");
     });
 
-    // 啟動即定位
-    locateUser();
+    // 載入資料 (這部分保持不變)
+    var pets = {{ pets | tojson }};
+    pets.forEach(function(pet) {
+        var marker = L.marker([pet.lat, pet.lng]).addTo(map);
+        var popupContent = `
+            <div class="popup-card">
+                <img src="${pet.photo_url}" style="width:100%; border-radius:8px; margin-bottom:8px;">
+                <h3 style="margin:0; color:#2c3e50;">${pet.name}</h3>
+                <div style="color:#e67e22; font-weight:bold; margin:5px 0;">📞 ${pet.phone}</div>
+                <div style="font-size:13px; color:#555; text-align:left;">${pet.desc}</div>
+                <div class="comment-box">
+                    ${pet.comments.length > 0 ? pet.comments.map(c => '<div>💬 '+c+'</div>').join('') : '目前尚無回報資訊'}
+                </div>
+                <form action="/comment/${pet.id}" method="POST" style="display:flex; gap:2px;">
+                    <input type="text" name="msg" placeholder="我有看見..." style="font-size:11px; flex:1;">
+                    <button type="submit" style="font-size:11px;">回報</button>
+                </form>
+        `;
+        if (isAdmin) {
+            popupContent += `<a href="/delete/${pet.id}"><button class="btn btn-del">🗑️ 刪除案件 (管理員專用)</button></a>`;
+        }
+        popupContent += `</div>`;
+        marker.bindPopup(popupContent);
+    });
 
     // 手動點擊修正位置
     map.on('click', function(e) {
@@ -136,6 +168,15 @@ function locateUser() {
         tempMarker = L.marker(e.latlng).addTo(map).bindTooltip("已選取新地點").openTooltip();
     });
 
+    // 繪製搜尋路線
+    var paths = {{ paths | tojson }};
+    if (paths.length > 1) {
+        L.polyline(paths, {color: '#2ecc71', weight: 4, opacity: 0.6, dashArray: '5, 10'}).addTo(map);
+    }
+    
+    // 延遲 1 秒自動觸發一次定位 (避免地圖未載入完成就執行)
+    setTimeout(locateUser, 1000);
+</script>
     // 載入資料
     var pets = {{ pets | tojson }};
     pets.forEach(function(pet) {
