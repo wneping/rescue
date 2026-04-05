@@ -1,13 +1,14 @@
+# -*- coding: utf-8 -*-
 import os
-from flask import Flask, render_template_string, request, session, redirect, url_for
+from flask import Flask, render_template_string, request, session, redirect, url_for, make_response
 import cloudinary
 import cloudinary.uploader
 
 app = Flask(__name__)
-# 建議在 Render 的 Environment Variables 增加一個 FLASK_SECRET_KEY
+# 建議在 Render 的 Environment Variables 增加 FLASK_SECRET_KEY
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'pet_mission_secure_key_2026')
 
-# --- 1. Cloudinary 配置 ---
+# --- 1. Cloudinary 配置 (請確保 Render 環境變數已設定) ---
 cloudinary.config( 
   cloud_name = os.environ.get('CLOUDINARY_NAME'), 
   api_key = os.environ.get('CLOUDINARY_API_KEY'), 
@@ -19,7 +20,7 @@ cloudinary.config(
 ADMIN_USER = "wxp800218"
 ADMIN_PW = "0981161269"
 
-# 暫存資料庫
+# 暫存資料庫 (注意：Render 免費版重啟後資料會清空)
 pets_data = []
 searched_paths = []
 
@@ -36,12 +37,12 @@ HTML_TEMPLATE = """
         body { font-family: "Microsoft JhengHei", Arial, sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; background: #eceff1; }
         header { background: #2c3e50; color: white; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; z-index: 1000; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
         #map { flex: 1; width: 100%; position: relative; }
-        .form-panel { padding: 15px; background: white; border-top: 4px solid #27ae60; z-index: 1001; }
+        .form-panel { padding: 15px; background: white; border-top: 4px solid #27ae60; z-index: 1001; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); }
         .btn { padding: 10px 15px; cursor: pointer; border: none; border-radius: 5px; font-weight: bold; }
         .btn-add { background: #27ae60; color: white; width: 100%; margin-top: 10px; font-size: 16px; }
         .btn-locate { position: absolute; top: 80px; left: 10px; z-index: 1000; background: white; border: 2px solid rgba(0,0,0,0.2); padding: 8px; cursor: pointer; border-radius: 4px; font-size: 20px; }
         .btn-del { background: #e74c3c; color: white; width: 100%; margin-top: 8px; font-size: 12px; }
-        input, textarea { width: 95%; padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        input { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
         .popup-card { width: 220px; text-align: center; }
         .comment-box { text-align: left; font-size: 12px; background: #f1f2f6; padding: 8px; max-height: 80px; overflow-y: auto; margin: 10px 0; border-radius: 5px; border-left: 3px solid #2ecc71; }
     </style>
@@ -54,11 +55,11 @@ HTML_TEMPLATE = """
     </div>
     <div>
         {% if is_admin %}
-            <span style="color:#f1c40f; font-size:12px;">👑 管理員</span> | <a href="/logout" style="color:white; font-size:12px;">登出</a>
+            <span style="color:#f1c40f; font-size:12px;">👑 管理員已登入</span> | <a href="/logout" style="color:white; font-size:12px; text-decoration:none;">登出</a>
         {% else %}
             <form action="/login" method="POST" style="display: inline;">
-                <input type="text" name="username" placeholder="帳號" style="width:60px; padding:2px; font-size:10px;">
-                <input type="password" name="password" placeholder="密碼" style="width:60px; padding:2px; font-size:10px;">
+                <input type="text" name="username" placeholder="帳號" style="width:60px; padding:2px; font-size:10px; display:inline-block;">
+                <input type="password" name="password" placeholder="密碼" style="width:60px; padding:2px; font-size:10px; display:inline-block;">
                 <button type="submit" style="font-size:10px; padding:2px 5px;">登入</button>
             </form>
         {% endif %}
@@ -70,15 +71,15 @@ HTML_TEMPLATE = """
 </div>
 
 <div class="form-panel">
-    <strong>🆕 發布新資訊：地圖已自動定位 (或手動點擊)</strong>
-    <form action="/add_pet" method="POST" enctype="multipart/form-data">
+    <strong>🆕 通報地點：地圖已自動定位 (或點擊地圖修正)</strong>
+    <form action="/add_pet" method="POST" enctype="multipart/form-data" onsubmit="return checkCoords()">
         <input type="hidden" id="lat" name="lat" required>
         <input type="hidden" id="lng" name="lng" required>
         <div style="display: flex; gap: 5px;">
-            <input type="text" name="name" placeholder="毛小孩稱呼" style="flex: 1;" required>
-            <input type="text" name="phone" placeholder="聯絡電話" style="flex: 1;" required>
+            <input type="text" name="name" placeholder="毛小孩稱呼" required>
+            <input type="text" name="phone" placeholder="您的聯絡電話" required>
         </div>
-        <input type="text" name="desc" placeholder="特徵描述 (例如：親人、受傷、藍色領巾)" required>
+        <input type="text" name="desc" placeholder="特徵描述 (如：藍色項圈、親人、受傷)" required>
         <div style="margin-top:5px;">
             <label style="font-size:12px; color:#666;">📸 上傳照片：</label>
             <input type="file" name="photo" accept="image/*" required>
@@ -89,78 +90,50 @@ HTML_TEMPLATE = """
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    // 初始化地圖
+    // 1. 初始化地圖
     var map = L.map('map').setView([23.6, 121.0], 7);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    var tempMarker = null; // 初始化為 null 避免報錯
+    var tempMarker = null;
     var isAdmin = {{ 'true' if is_admin else 'false' }};
 
-    // --- 強化版 GPS 定位邏輯 ---
-    function locateUser() {
-        console.log("開始定位...");
-        // 增加一個簡單的提示，讓使用者知道正在嘗試定位
-        if (confirm("是否允許網頁存取您的精確位置以協助定位？")) {
-            map.locate({
-                setView: true, 
-                maxZoom: 16,
-                enableHighAccuracy: true, // 強制開啟手機 GPS
-                timeout: 15000,           // 給手機 15 秒時間搜尋衛星
-                maximumAge: 0             // 強制獲取最新資訊
-            });
+    // 2. 定位檢查邏輯
+    function checkCoords() {
+        var lat = document.getElementById('lat').value;
+        if (!lat) {
+            alert("請先在地圖上點擊位置，或點擊 📍 按鈕獲取 GPS 座標。");
+            return false;
         }
+        return true;
     }
 
-    // 定位成功時
+    // 3. 強化版 GPS 定位
+    function locateUser() {
+        console.log("正在嘗試定位...");
+        map.locate({
+            setView: true, 
+            maxZoom: 16,
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 0
+        });
+    }
+
     map.on('locationfound', function(e) {
-        console.log("定位成功:", e.latlng);
-        var radius = e.accuracy / 2;
-        
-        // 更新表單座標
         document.getElementById('lat').value = e.latlng.lat;
         document.getElementById('lng').value = e.latlng.lng;
-        
-        // 放置標記
-        if (tempMarker) {
-            map.removeLayer(tempMarker);
-        }
+        if (tempMarker) map.removeLayer(tempMarker);
         tempMarker = L.marker(e.latlng).addTo(map).bindTooltip("您目前的精確位置").openTooltip();
-        
-        // 畫出誤差圓圈
-        L.circle(e.latlng, radius, {color: '#3498db', fillOpacity: 0.1}).addTo(map);
+        L.circle(e.latlng, e.accuracy / 2, {color: '#3498db', fillOpacity: 0.1}).addTo(map);
     });
 
-    // 定位失敗時 (這很重要，它會告訴你為什麼失敗)
     map.on('locationerror', function(e) {
-        alert("定位失敗：" + e.message + "\\n\\n請確認：\\n1. 網址開頭為 https\\n2. 手機已開啟 GPS\\n3. 瀏覽器已允許位置權限");
+        alert("定位失敗：" + e.message + "\\n\\n請確認：\\n1. 網址為 https 開頭\\n2. 瀏覽器已允許定位權限");
     });
 
-    // 載入資料 (這部分保持不變)
-    var pets = {{ pets | tojson }};
-    pets.forEach(function(pet) {
-        var marker = L.marker([pet.lat, pet.lng]).addTo(map);
-        var popupContent = `
-            <div class="popup-card">
-                <img src="${pet.photo_url}" style="width:100%; border-radius:8px; margin-bottom:8px;">
-                <h3 style="margin:0; color:#2c3e50;">${pet.name}</h3>
-                <div style="color:#e67e22; font-weight:bold; margin:5px 0;">📞 ${pet.phone}</div>
-                <div style="font-size:13px; color:#555; text-align:left;">${pet.desc}</div>
-                <div class="comment-box">
-                    ${pet.comments.length > 0 ? pet.comments.map(c => '<div>💬 '+c+'</div>').join('') : '目前尚無回報資訊'}
-                </div>
-                <form action="/comment/${pet.id}" method="POST" style="display:flex; gap:2px;">
-                    <input type="text" name="msg" placeholder="我有看見..." style="font-size:11px; flex:1;">
-                    <button type="submit" style="font-size:11px;">回報</button>
-                </form>
-        `;
-        if (isAdmin) {
-            popupContent += `<a href="/delete/${pet.id}"><button class="btn btn-del">🗑️ 刪除案件 (管理員專用)</button></a>`;
-        }
-        popupContent += `</div>`;
-        marker.bindPopup(popupContent);
-    });
+    // 4. 自動觸發與手動點擊
+    setTimeout(locateUser, 1000);
 
-    // 手動點擊修正位置
     map.on('click', function(e) {
         document.getElementById('lat').value = e.latlng.lat;
         document.getElementById('lng').value = e.latlng.lng;
@@ -168,16 +141,7 @@ HTML_TEMPLATE = """
         tempMarker = L.marker(e.latlng).addTo(map).bindTooltip("已選取新地點").openTooltip();
     });
 
-    // 繪製搜尋路線
-    var paths = {{ paths | tojson }};
-    if (paths.length > 1) {
-        L.polyline(paths, {color: '#2ecc71', weight: 4, opacity: 0.6, dashArray: '5, 10'}).addTo(map);
-    }
-    
-    // 延遲 1 秒自動觸發一次定位 (避免地圖未載入完成就執行)
-    setTimeout(locateUser, 1000);
-</script>
-    // 載入資料
+    // 5. 載入標記資料
     var pets = {{ pets | tojson }};
     pets.forEach(function(pet) {
         var marker = L.marker([pet.lat, pet.lng]).addTo(map);
@@ -191,7 +155,7 @@ HTML_TEMPLATE = """
                     ${pet.comments.length > 0 ? pet.comments.map(c => '<div>💬 '+c+'</div>').join('') : '目前尚無回報資訊'}
                 </div>
                 <form action="/comment/${pet.id}" method="POST" style="display:flex; gap:2px;">
-                    <input type="text" name="msg" placeholder="我有看見..." style="font-size:11px; flex:1;">
+                    <input type="text" name="msg" placeholder="我有看見..." style="font-size:11px; flex:1; border:1px solid #ccc; padding:3px;">
                     <button type="submit" style="font-size:11px;">回報</button>
                 </form>
         `;
@@ -202,7 +166,7 @@ HTML_TEMPLATE = """
         marker.bindPopup(popupContent);
     });
 
-    // 繪製搜尋路線
+    // 6. 繪製搜尋路線
     var paths = {{ paths | tojson }};
     if (paths.length > 1) {
         L.polyline(paths, {color: '#2ecc71', weight: 4, opacity: 0.6, dashArray: '5, 10'}).addTo(map);
@@ -217,7 +181,16 @@ HTML_TEMPLATE = """
 @app.route('/')
 def index():
     is_admin = session.get('is_admin', False)
-    return render_template_string(HTML_TEMPLATE, pets=pets_data, paths=searched_paths, is_admin=is_admin)
+    rendered = render_template_string(
+        HTML_TEMPLATE, 
+        pets=pets_data, 
+        paths=searched_paths, 
+        is_admin=is_admin
+    )
+    # 強制使用 UTF-8 回應，解決亂碼問題
+    response = make_response(rendered)
+    response.headers['Content-Type'] = 'text/html; charset=utf-8'
+    return response
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -239,8 +212,9 @@ def add_pet():
         lng = request.form.get('lng')
         
         if not file or not lat or not lng:
-            return "資料不完整 (請確保已點擊地圖定位並選取照片)", 400
+            return "資料不完整，請重新操作", 400
         
+        # 上傳照片至 Cloudinary
         upload_result = cloudinary.uploader.upload(file)
         photo_url = upload_result.get('secure_url')
 
@@ -258,7 +232,7 @@ def add_pet():
         searched_paths.append([new_pet['lat'], new_pet['lng']])
         return redirect(url_for('index'))
     except Exception as e:
-        return f"上傳失敗，請檢查 Cloudinary 設定: {e}", 500
+        return f"連線錯誤: {e}", 500
 
 @app.route('/comment/<int:pet_id>', methods=['POST'])
 def add_comment(pet_id):
